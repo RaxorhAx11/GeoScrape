@@ -1,6 +1,7 @@
 import os
 import datetime
 import logging
+from typing import List, Optional
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtCore import QObject, Signal
 
@@ -61,10 +62,19 @@ class MainWindowController(QObject):
         self.batch_orchestrator = None
         self.batch_queue = None
         self.batch_file_path = None
+        self.pending_export_path = None
+        self.current_review_items = []
 
         # Bind Single Scrape View buttons to Controller slots
         self.view.control_panel.start_button.clicked.connect(self.start_scraping)
         self.view.control_panel.stop_button.clicked.connect(self.stop_scraping)
+
+        # Bind Human-in-the-Loop Review Panel slots (HITL Workflow #4)
+        self.view.review_panel.approved.connect(self.on_review_approved)
+        self.view.review_panel.cancelled.connect(self.on_review_cancelled)
+        self.view.review_panel.record_edited.connect(self.on_record_edited)
+        self.view.review_panel.records_deleted.connect(self.on_records_deleted)
+        self.view.review_panel.metrics_updated.connect(self.on_review_metrics_updated)
 
         # Bind Batch Queue View buttons to Controller slots
         self.view.batch_panel.load_button.clicked.connect(self.load_batch_file)
@@ -113,11 +123,14 @@ class MainWindowController(QObject):
             self.view.set_status("idle", "Export path not specified.")
             return
 
+        self.pending_export_path = export_path
+
         # 3. Transition GUI Controls into 'Running' states
         self.view.tab_widget.tabBar().setEnabled(False)
         self.view.config_form.set_inputs_enabled(False)
         self.view.control_panel.set_running(True)
         self.view.log_console.clear()
+        self.view.show_console_tab()
         
         self.view.log_console.log("Initializing scraper browser process...", "INFO")
         self.view.set_status("running", "Initializing scraper...")
@@ -129,7 +142,7 @@ class MainWindowController(QObject):
         self.scraper.headless = config["headless"]
         self.scraper.config = ScraperConfig(headless=config["headless"])
 
-        # 5. Spin up background QThread Orchestration worker
+        # 5. Spin up background QThread Orchestration worker with auto_export=False (HITL Review)
         self.orchestrator = ScrapeOrchestrator(
             scraper=self.scraper,
             exporter=self.exporter,
@@ -137,12 +150,14 @@ class MainWindowController(QObject):
             location=config["location"],
             limit=config["limit"],
             export_path=export_path,
+            auto_export=False,
             parent=self
         )
 
         # Wire worker event signals to slots
         self.orchestrator.item_scraped.connect(self.on_item_scraped)
         self.orchestrator.progress_changed.connect(self.on_progress_changed)
+        self.orchestrator.data_ready.connect(self.on_scrape_data_ready)
         self.orchestrator.scraping_finished.connect(self.on_scraping_finished)
         self.orchestrator.failed.connect(self.on_scraping_failed)
         
@@ -172,8 +187,115 @@ class MainWindowController(QObject):
         self.view.log_console.set_progress(percent)
         self.view.set_status("running", f"Scraped {current} of {total} leads...")
 
+    def on_scrape_data_ready(self, items: List[BusinessItem]) -> None:
+        """
+        Slot invoked when scraping & enrichment finishes.
+        Transitions the workflow to HITL Workflow #4: Human Review & Approval.
+        """
+        count = len(items)
+        self.current_review_items = items
+        self.view.log_console.log(f"Scraping completed. Records collected: {count}", "SUCCESS")
+        logger.info(f"Review stage started: {count} records")
+        self.view.log_console.log(f"Review stage started: {count} records", "INFO")
+        self.view.log_console.log("Waiting for human review before final export...", "WARNING")
+        
+        self.view.set_status("review", "Waiting for human review.")
+        self.view.review_panel.load_items(items, self.pending_export_path or "")
+        self.view.update_review_tab_label(count)
+        self.view.show_review_tab()
+        
+        # Scrape worker has finished, allow user to operate review UI
+        self.view.control_panel.set_running(False)
+        self.orchestrator = None
+
+    def on_record_edited(self, name: str) -> None:
+        """Slot invoked when human reviewer modifies a record."""
+        logger.info(f"User edited record: {name}")
+        self.view.log_console.log(f"User edited record: {name}", "INFO")
+
+    def on_records_deleted(self, count: int) -> None:
+        """Slot invoked when human reviewer deletes records."""
+        logger.info(f"User removed {count} records")
+        self.view.log_console.log(f"User removed {count} records", "WARNING")
+        self.view.set_status("review", f"Records removed: {count}. Waiting for human review.")
+
+    def on_review_metrics_updated(self, total: int, approved: int, removed: int) -> None:
+        """Slot invoked when record selection or deletion changes approved count."""
+        self.view.update_review_tab_label(approved)
+
+    def on_review_approved(self, approved_items: List[BusinessItem], export_path: str) -> None:
+        """
+        Slot invoked when reviewer clicks 'Approve & Export'.
+        Exports only the approved records to Excel using the existing ExcelExporter.
+        """
+        if not approved_items:
+            self.view.log_console.log("Approval failed: No records selected for export.", "ERROR")
+            self.view.set_status("error", "No records selected.")
+            QMessageBox.warning(self.view, "No Records", "No records are selected for export.")
+            return
+
+        if not export_path:
+            default_dir = os.path.expanduser("~/Desktop")
+            if not os.path.exists(default_dir):
+                default_dir = os.getcwd()
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            export_path, _ = QFileDialog.getSaveFileName(
+                self.view,
+                "Export Approved Leads",
+                os.path.join(default_dir, f"leads_{today_str}.xlsx"),
+                "Excel Spreadsheet (*.xlsx)"
+            )
+            if not export_path:
+                self.view.log_console.log("Export cancelled: Export path was not specified.", "WARNING")
+                return
+
+        count = len(approved_items)
+        logger.info(f"User approved {count} records")
+        self.view.log_console.log(f"User approved {count} records", "SUCCESS")
+        self.view.log_console.log(f"Exporting approved records to: {export_path}", "INFO")
+        self.view.set_status("running", f"Exporting {count} records...")
+
+        try:
+            logger.info("Exporting approved records")
+            final_path = self.exporter.export(approved_items, export_path)
+            self.view.log_console.log(f"Export completed: {final_path}", "SUCCESS")
+            self.view.set_status("success", "Export completed.")
+
+            QMessageBox.information(
+                self.view,
+                "Review Approved",
+                f"Human Review Approved!\n\n"
+                f"Successfully exported {count} approved records to:\n"
+                f"{final_path}"
+            )
+            self.reset_review_state()
+
+        except Exception as e:
+            logger.error(f"Failed to export approved records: {e}")
+            self.view.log_console.log(f"Failed to export approved records: {e}", "ERROR")
+            self.view.set_status("error", "Export failed.")
+            QMessageBox.critical(
+                self.view,
+                "Export Error",
+                f"Failed to export approved records:\n\n{e}"
+            )
+
+    def on_review_cancelled(self) -> None:
+        """Slot invoked when reviewer cancels review without exporting."""
+        logger.info("Review cancelled")
+        self.view.log_console.log("Review cancelled by user. No data was exported.", "WARNING")
+        self.view.set_status("idle", "Review cancelled.")
+        self.reset_review_state()
+
+    def reset_review_state(self) -> None:
+        """Clears the review panel and restores main window to idle state."""
+        self.view.review_panel.clear()
+        self.view.update_review_tab_label(0)
+        self.view.show_console_tab()
+        self.reset_ui_state()
+
     def on_scraping_finished(self, export_path: str) -> None:
-        """Slot invoked when work succeeds and spreadsheet writes are completed."""
+        """Slot invoked when work succeeds (direct export fallback)."""
         self.view.log_console.log(f"All data successfully written to: {export_path}", "SUCCESS")
         self.view.set_status("success", "Scrape completed successfully!")
         

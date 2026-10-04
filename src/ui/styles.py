@@ -284,4 +284,29 @@ QPushButton#loadBatchBtn:disabled {
     color: #aeaeb2;
     border-color: #e8e8ed;
 }
+
+/* Review Panel Action Buttons */
+QPushButton#reviewActionBtn {
+    background-color: #f5f5f7;
+    border: 1px solid #d2d2d7;
+    color: #1d1d1f;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+QPushButton#reviewActionBtn:hover {
+    background-color: #e8e8ed;
+    border-color: #86868b;
+}
+
+QPushButton#reviewActionBtn:pressed {
+    background-color: #dedee3;
+}
+
+/* Dialog Styling */
+QDialog {
+    background-color: #ffffff;
+}
 """

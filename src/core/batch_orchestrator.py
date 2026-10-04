@@ -22,6 +22,7 @@ class BatchScrapeOrchestrator(QThread):
     job_started = Signal(int, int, BatchJob)             # current_job_num (1-based), total_jobs, BatchJob
     job_item_scraped = Signal(int, int, BusinessItem)    # current_job_num, total_jobs, BusinessItem
     job_progress = Signal(int, int, int, int)            # current_job_num, total_jobs, scraped_count, limit
+    job_data_ready = Signal(int, int, BatchJob, list, str) # current_job_num, total_jobs, job, items, export_path
     job_finished = Signal(int, int, BatchJobResult)      # current_job_num, total_jobs, BatchJobResult
     batch_finished = Signal(str, list)                   # summary_report_text, list of BatchJobResult
     batch_cancelled = Signal()                           # Triggered when user cancels
@@ -33,6 +34,7 @@ class BatchScrapeOrchestrator(QThread):
         scraper: ScraperInterface,
         exporter: ExporterInterface,
         output_dir: str,
+        auto_export: bool = True,
         parent=None
     ) -> None:
         super().__init__(parent)
@@ -40,6 +42,7 @@ class BatchScrapeOrchestrator(QThread):
         self.scraper = scraper
         self.exporter = exporter
         self.output_dir = output_dir
+        self.auto_export = auto_export
         self._is_cancelled = False
 
     def run(self) -> None:
@@ -97,21 +100,24 @@ class BatchScrapeOrchestrator(QThread):
                 if not scraped_items:
                     raise ValueError(f"No business listings found for query '{job.keyword}' in '{job.location}'.")
 
-                # 2. Export collected leads to dedicated Excel file
-                final_path = self.exporter.export(scraped_items, export_path)
-                logger.info(
-                    f"Job {current_job_num} completed: {len(scraped_items)} businesses. "
-                    f"Export completed: {os.path.basename(final_path)}"
-                )
+                if self.auto_export:
+                    # 2. Export collected leads to dedicated Excel file
+                    final_path = self.exporter.export(scraped_items, export_path)
+                    logger.info(
+                        f"Job {current_job_num} completed: {len(scraped_items)} businesses. "
+                        f"Export completed: {os.path.basename(final_path)}"
+                    )
 
-                result = BatchJobResult(
-                    job=job,
-                    success=True,
-                    count=len(scraped_items),
-                    export_path=final_path
-                )
-                self.queue.record_result(result)
-                self.job_finished.emit(current_job_num, total_jobs, result)
+                    result = BatchJobResult(
+                        job=job,
+                        success=True,
+                        count=len(scraped_items),
+                        export_path=final_path
+                    )
+                    self.queue.record_result(result)
+                    self.job_finished.emit(current_job_num, total_jobs, result)
+                else:
+                    self.job_data_ready.emit(current_job_num, total_jobs, job, scraped_items, export_path)
 
             except InterruptedError:
                 logger.warning(f"Job {current_job_num} interrupted by user.")

@@ -46,6 +46,9 @@ class StatusIndicatorDot(QWidget):
             self._color = QColor("#ff3b30")  # Apple Red
         elif state == "cancelling":
             self._color = QColor("#ff9500")  # Apple Orange
+        elif state in ("review", "waiting"):
+            self._color = QColor("#ff9500")  # Amber/Orange for Human Attention Required
+            self.pulse_anim.start()
         else:
             self._color = QColor("#86868b")
             

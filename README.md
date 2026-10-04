@@ -33,6 +33,18 @@ GeoScrape demonstrates **5 fully automated RPA workflows**:
 
 ---
 
+## 👤 Human-in-the-Loop (HITL) Workflows
+
+GeoScrape incorporates **5 interactive Human-in-the-Loop decisions**:
+
+1. **Interactive Job Configuration & Destination Selection**: Operator configures keywords, geographic boundary, lead caps, and browser visibility parameters with input validation and custom destination path negotiation.
+2. **User-Controlled Cancellation & Partial Recovery**: Operator can halt long-running background scraping mid-cycle; the system traps the interruption signal, prevents thread corruption, and preserves all collected records.
+3. **Application Termination Guard**: Prevents accidental exit during background operations by intercepting window close events, presenting confirmation modals, and safely terminating sub-processes.
+4. **Interactive Data Review & Lead Approval (Workflow #4)**: Transitions automated scraping into a dedicated review table before Excel generation. Human reviewers inspect scraped/enriched records, correct inaccurate fields, delete unwanted leads, select/deselect entries, and give explicit authorization to export.
+5. **Batch Exception Review & Recovery**: Unattended batch execution catches individual task failures gracefully, preserving successful outputs and presenting summary reports for operator audit.
+
+---
+
 ## 🚀 Features
 
 * **Dual-Mode Desktop Interface**: Single Scrape mode for quick queries and Batch Queue mode for unattended multi-query processing.
@@ -125,10 +137,17 @@ For a detailed blueprint including sequence diagrams, consult the [Architecture 
    * **Headed Toggle**: Enable "Show browser window" if you want to visually watch Playwright navigate Google Maps.
 2. **Begin Extraction**:
    * Click **Start Scrape**.
-   * Pick your export directory and filename in the save dialog.
-   * Watch progress update in real-time on the status bar and the Live Execution Log.
-3. **Halt Scrape (Optional)**:
-   * Press **Stop** to halt scraping mid-run. The app will immediately complete saving all items collected up to the cancellation.
+   * Pick your export destination path in the file save dialog.
+   * Watch extraction and website enrichment progress update in real-time on the status bar and Live Execution Log.
+3. **Interactive Human Review & Lead Approval (HITL Workflow #4)**:
+   * When scraping completes, GeoScrape automatically opens the **Data Review** table view.
+   * **Select / Deselect**: Toggle individual checkboxes or use **Select All** / **Deselect All** to choose which leads to keep.
+   * **Edit Records**: Highlight a record and click **Edit Selected** (or double-click) to correct inaccurate data with field validation.
+   * **Delete Unwanted Leads**: Select rows and click **Delete Selected** to remove spam or irrelevant businesses.
+   * **Approve & Export**: Click **✓ Approve & Export** to generate the final Excel spreadsheet containing ONLY approved records.
+   * **Cancel Review**: Click **Cancel Review** to discard the scraped dataset safely without writing to disk.
+4. **Halt Scrape Mid-Run (Optional)**:
+   * Press **Stop** to halt scraping mid-run. The app preserves partially collected records and offers them for review.
 
 ### Batch Queue Mode (Autonomous Multi-Query RPA Workflow):
 1. **Switch to "Batch Queue" Tab** in the left sidebar.

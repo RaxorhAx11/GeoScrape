@@ -11,7 +11,8 @@ class ScrapeOrchestrator(QThread):
     """
     item_scraped = Signal(BusinessItem)
     progress_changed = Signal(int, int)  # Current, Total
-    scraping_finished = Signal(str)     # Export path
+    data_ready = Signal(list)            # Emitted with List[BusinessItem] for human review
+    scraping_finished = Signal(str)     # Export path (when auto_export=True)
     failed = Signal(str)                # Error message
 
     def __init__(
@@ -21,7 +22,8 @@ class ScrapeOrchestrator(QThread):
         query: str,
         location: str,
         limit: int,
-        export_path: str,
+        export_path: str = "",
+        auto_export: bool = False,
         parent=None
     ):
         super().__init__(parent)
@@ -31,6 +33,7 @@ class ScrapeOrchestrator(QThread):
         self.location = location
         self.limit = limit
         self.export_path = export_path
+        self.auto_export = auto_export
         self._is_cancelled = False
 
     def run(self):
@@ -65,18 +68,24 @@ class ScrapeOrchestrator(QThread):
             if not scraped_items:
                 raise ValueError("No business listings were found for the query.")
 
-            # 2. Export scraped results
-            final_path = self.exporter.export(scraped_items, self.export_path)
-            self.scraping_finished.emit(final_path)
+            # 2. Export or hand off for human review (HITL Workflow #4)
+            if self.auto_export:
+                final_path = self.exporter.export(scraped_items, self.export_path)
+                self.scraping_finished.emit(final_path)
+            else:
+                self.data_ready.emit(scraped_items)
 
         except InterruptedError as e:
-            # Handle cancellation: save what we have, if any
+            # Handle cancellation: save what we have or emit for human review
             if scraped_items:
-                try:
-                    final_path = self.exporter.export(scraped_items, self.export_path)
-                    self.scraping_finished.emit(final_path)
-                except Exception as save_err:
-                    self.failed.emit(f"Scrape cancelled, failed to save partially collected data: {save_err}")
+                if self.auto_export:
+                    try:
+                        final_path = self.exporter.export(scraped_items, self.export_path)
+                        self.scraping_finished.emit(final_path)
+                    except Exception as save_err:
+                        self.failed.emit(f"Scrape cancelled, failed to save partially collected data: {save_err}")
+                else:
+                    self.data_ready.emit(scraped_items)
             else:
                 self.failed.emit(str(e))
                 

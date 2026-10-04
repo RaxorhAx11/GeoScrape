@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPropertyAnimation
 from PySide6.QtGui import QColor, QShowEvent
 
-from src.ui.components import ConfigForm, ControlPanel, LogConsole, StatusIndicatorDot, BatchPanel
+from src.ui.components import ConfigForm, ControlPanel, LogConsole, StatusIndicatorDot, BatchPanel, ReviewPanel
 from src.ui.styles import APPLE_STYLE_SHEET
 
 class MainWindow(QMainWindow):
@@ -19,8 +19,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("GeoScrape - RPA Lead Generator")
-        self.resize(920, 600)
-        self.setMinimumSize(850, 520)
+        self.resize(1080, 640)
+        self.setMinimumSize(920, 560)
         
         # Apply the global stylesheet loaded from styles module
         self.setStyleSheet(APPLE_STYLE_SHEET)
@@ -143,17 +143,25 @@ class MainWindow(QMainWindow):
         self.console_card.setGraphicsEffect(console_shadow)
         
         console_layout = QVBoxLayout(self.console_card)
-        console_layout.setContentsMargins(0, 0, 0, 0)
+        console_layout.setContentsMargins(8, 8, 8, 8)
+        
+        self.right_tabs = QTabWidget()
+        self.right_tabs.setObjectName("rightTabs")
         
         self.log_console = LogConsole()
-        console_layout.addWidget(self.log_console)
+        self.review_panel = ReviewPanel()
+        
+        self.right_tabs.addTab(self.log_console, "Console & Logs")
+        self.right_tabs.addTab(self.review_panel, "Data Review (HITL)")
+        
+        console_layout.addWidget(self.right_tabs)
         
         # Add widgets to splitter
         splitter.addWidget(self.sidebar_card)
         splitter.addWidget(self.console_card)
         
-        # Establish default split proportions (340px sidebar, remainder console)
-        splitter.setSizes([340, 540])
+        # Establish default split proportions (340px sidebar, remainder console/review)
+        splitter.setSizes([340, 740])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         
@@ -186,6 +194,19 @@ class MainWindow(QMainWindow):
         """
         self.status_dot.set_state(state)
         self.status_label.setText(text)
+
+    def show_review_tab(self) -> None:
+        """Switches the right container tab view to the Data Review panel."""
+        self.right_tabs.setCurrentWidget(self.review_panel)
+
+    def show_console_tab(self) -> None:
+        """Switches the right container tab view to the Console & Logs panel."""
+        self.right_tabs.setCurrentWidget(self.log_console)
+
+    def update_review_tab_label(self, count: int) -> None:
+        """Updates the Data Review tab title with current review record count."""
+        label = f"Data Review ({count})" if count > 0 else "Data Review (HITL)"
+        self.right_tabs.setTabText(1, label)
 
     def closeEvent(self, event) -> None:
         """
