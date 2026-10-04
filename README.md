@@ -21,16 +21,29 @@ Designed with academic presentation in mind, this project adheres strictly to **
 
 ---
 
+## 🤖 Automated RPA Workflows (Faculty Requirements)
+
+GeoScrape demonstrates **5 fully automated RPA workflows**:
+
+1. **Dynamic Google Maps Results Scrolling & Lazy Loading**: Programmatically locates the virtualized feed panel, detects lazy-loaded DOM boundaries, and autoscrolls until reaching the specified lead threshold or exhausting feed results.
+2. **Automated Cookie Consent & Dialog Handling**: Intelligently inspects and bypasses regional Google consent modals and cookies dialogues without interrupting headless execution.
+3. **Automated Business Data Extraction, Cleaning & Throttling**: Parses multi-line addresses, phone numbers, ratings, review counts, and categories with graceful fallbacks and human-like randomized throttling (2-5s) to prevent rate limiting.
+4. **Automated Website Contact & Social Profile Enrichment**: Navigates to discovered business websites, scans footer, header, and contact pages, and extracts direct email addresses and social profiles (LinkedIn, Facebook, Instagram).
+5. **Autonomous Multi-Query Batch Queue Processor**: Loads JSON-configured batch search queues, executes queries sequentially without human intervention, automatically saves dedicated Excel spreadsheets with sanitized filenames, handles failures fault-tolerantly, and generates an aggregate summary.
+
+---
+
 ## 🚀 Features
 
-* **Visual Config Form**: Configure searches using parameters like `Keyword`, `Location`, and `Max Results` limits.
-* **Responsive Background Scraper**: Scrapes lead details inside a background `QThread` to ensure the PySide6 user interface stays smooth and completely interactive.
-* **Polite Scraping (Rate Limit Safe)**: Implements randomized human-like delays (2 to 5 seconds) between business profile navigations to mimic realistic activity and prevent IP rate-limiting.
-* **Resilient DOM Extractor**: Gracefully handles missing properties (e.g. absent phone numbers or website URLs) by reverting to `"N/A"` instead of failing the workflow.
-* **Dynamic Results Loader**: Locates results panels and programmatically triggers page scrolling to lazy-load entries up to the requested result count.
-* **Early Terminate / Stop Safety**: Halts operations safely mid-run upon cancellation request, ensuring all data collected up to that point is preserved and exported.
-* **Real-time UI Logs Redirection**: Features a thread-safe `QtLogHandler` that intercepts system logs and prints progress directly to the in-app scrolling console text panel.
-* **Rich Styled Excel Export**: Automatically generates column widths, styles headers, applies borders, and exports to `.xlsx` files with date-injected file names.
+* **Dual-Mode Desktop Interface**: Single Scrape mode for quick queries and Batch Queue mode for unattended multi-query processing.
+* **Autonomous Batch Processor**: Executes consecutive scraping and enrichment jobs sequentially without user intervention.
+* **Responsive Background Threading**: Uses dedicated `QThread` workers (`ScrapeOrchestrator` and `BatchScrapeOrchestrator`) keeping the GUI responsive.
+* **Polite Scraping (Rate Limit Safe)**: Implements randomized human-like delays (2 to 5 seconds) between business profile navigations.
+* **Automated Website Contact Enrichment**: Scans business sites for contact emails and social media channels.
+* **Safe Output Filenames**: Generates collision-proof, sanitized Excel files (`<keyword>_<location>_<timestamp>.xlsx`).
+* **Early Terminate / Stop Safety**: Halts operations safely mid-run upon cancellation request while preserving collected data.
+* **Real-time UI Logs Redirection**: Thread-safe `QtLogHandler` routes logging records directly to the in-app console.
+* **Rich Styled Excel Export**: Automatically generates column widths, styles headers, applies borders, and exports to `.xlsx`.
 
 ---
 
@@ -104,19 +117,36 @@ For a detailed blueprint including sequence diagrams, consult the [Architecture 
    python src/main.py
    ```
 
-2. **Configure Your Query**:
+### Single Scrape Mode:
+1. **Configure Your Query**:
    * **Business Keyword**: Enter what you want to find (e.g. *Dentist*, *Real Estate*, *Cafe*).
    * **Location**: Define the city or area (e.g. *Boston, MA*, *Austin, TX*).
    * **Maximum Results**: Use the spinner to set a result ceiling.
    * **Headed Toggle**: Enable "Show browser window" if you want to visually watch Playwright navigate Google Maps.
-
-3. **Begin Extraction**:
+2. **Begin Extraction**:
    * Click **Start Scrape**.
    * Pick your export directory and filename in the save dialog.
    * Watch progress update in real-time on the status bar and the Live Execution Log.
-
-4. **Halt Scrape (Optional)**:
+3. **Halt Scrape (Optional)**:
    * Press **Stop** to halt scraping mid-run. The app will immediately complete saving all items collected up to the cancellation.
+
+### Batch Queue Mode (Autonomous Multi-Query RPA Workflow):
+1. **Switch to "Batch Queue" Tab** in the left sidebar.
+2. **Choose an Input Method**:
+   * **Method 1: Simple Input (Fast & Direct)**:
+     Type or paste your queries directly into the text box (one per line, format: `Keyword, Location, Limit`):
+     ```text
+     Dentist, Ahmedabad, 20
+     Restaurant, Ahmedabad, 20
+     Hotel, Surat, 20
+     ```
+   * **Method 2: Upload JSON**:
+     Switch to the **Upload JSON** sub-tab and click **Load Batch File (.json)** to select a pre-configured JSON file (e.g., `batch_jobs.json`).
+3. **Execute Autonomous Batch**:
+   * Click **Run Batch**.
+   * Select a destination folder where individual Excel files will be placed.
+   * The application processes Job 1 → Scrapes Google Maps → Enriches website contacts → Exports Excel → Automatically transitions to Job 2 → Continues until queue completes.
+4. **Cancel Batch**: Click **Cancel Batch** at any time to gracefully halt processing subsequent queries while preserving completed spreadsheets.
 
 ---
 

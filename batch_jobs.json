@@ -1,0 +1,17 @@
+[
+    {
+        "keyword": "Dentist",
+        "location": "Ahmedabad",
+        "max_results": 20
+    },
+    {
+        "keyword": "Restaurant",
+        "location": "Ahmedabad",
+        "max_results": 20
+    },
+    {
+        "keyword": "Hotel",
+        "location": "Surat",
+        "max_results": 20
+    }
+]

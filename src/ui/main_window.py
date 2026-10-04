@@ -1,8 +1,11 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel, QGraphicsDropShadowEffect, QSplitter
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFrame,
+    QLabel, QGraphicsDropShadowEffect, QSplitter, QTabWidget
+)
 from PySide6.QtCore import Qt, QPropertyAnimation
 from PySide6.QtGui import QColor, QShowEvent
 
-from src.ui.components import ConfigForm, ControlPanel, LogConsole, StatusIndicatorDot
+from src.ui.components import ConfigForm, ControlPanel, LogConsole, StatusIndicatorDot, BatchPanel
 from src.ui.styles import APPLE_STYLE_SHEET
 
 class MainWindow(QMainWindow):
@@ -71,14 +74,36 @@ class MainWindow(QMainWindow):
         
         sidebar_layout.addSpacing(8)
         
-        # Config Form input widget
+        # Mode Selection Tabs (Single Scrape vs Batch Queue)
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setObjectName("modeTabs")
+        
+        # Tab 1: Single Job
+        single_tab = QWidget()
+        single_layout = QVBoxLayout(single_tab)
+        single_layout.setContentsMargins(0, 8, 0, 0)
+        single_layout.setSpacing(12)
+        
         self.config_form = ConfigForm()
-        sidebar_layout.addWidget(self.config_form)
-        
-        # Control buttons panel widget
         self.control_panel = ControlPanel()
-        sidebar_layout.addWidget(self.control_panel)
+        single_layout.addWidget(self.config_form)
+        single_layout.addWidget(self.control_panel)
+        single_layout.addStretch()
         
+        # Tab 2: Autonomous Batch Mode
+        batch_tab = QWidget()
+        batch_layout = QVBoxLayout(batch_tab)
+        batch_layout.setContentsMargins(0, 8, 0, 0)
+        batch_layout.setSpacing(12)
+        
+        self.batch_panel = BatchPanel()
+        batch_layout.addWidget(self.batch_panel)
+        batch_layout.addStretch()
+        
+        self.tab_widget.addTab(single_tab, "Single Scrape")
+        self.tab_widget.addTab(batch_tab, "Batch Queue")
+        
+        sidebar_layout.addWidget(self.tab_widget)
         sidebar_layout.addStretch()
         
         # Status Box setup
