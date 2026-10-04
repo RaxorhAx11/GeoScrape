@@ -23,7 +23,11 @@ class TestExcelExporter(unittest.TestCase):
                 address="123 Main St, Austin, TX",
                 phone="+1 512-555-0199",
                 website="https://testcafe.com",
-                maps_url="https://google.com/maps/place/1"
+                maps_url="https://google.com/maps/place/1",
+                email="hello@testcafe.com",
+                linkedin="https://linkedin.com/company/testcafe",
+                facebook="https://facebook.com/testcafe",
+                instagram="https://instagram.com/testcafe"
             ),
             BusinessItem(
                 name="Dental Clinic",
@@ -61,6 +65,7 @@ class TestExcelExporter(unittest.TestCase):
         headers = [cell.value for cell in ws[1]]
         expected_headers = [
             "Business Name", "Address", "Phone", "Website", 
+            "Email", "LinkedIn", "Facebook", "Instagram",
             "Rating", "Reviews", "Google Maps URL"
         ]
         self.assertEqual(headers, expected_headers)
@@ -68,12 +73,24 @@ class TestExcelExporter(unittest.TestCase):
         # Verify rows
         self.assertEqual(ws.max_row, 3) # 1 header row + 2 data rows
         
-        # Check first data row values (mapping is updated to match user request)
+        # Check first data row values with enrichment data
         row2 = [cell.value for cell in ws[2]]
         self.assertEqual(row2[0], "Test Cafe")
         self.assertEqual(row2[1], "123 Main St, Austin, TX")
         self.assertEqual(row2[2], "+1 512-555-0199")
         self.assertEqual(row2[3], "https://testcafe.com")
-        self.assertEqual(row2[4], 4.5)
-        self.assertEqual(row2[5], 120)
-        self.assertEqual(row2[6], "https://google.com/maps/place/1")
+        self.assertEqual(row2[4], "hello@testcafe.com")
+        self.assertEqual(row2[5], "https://linkedin.com/company/testcafe")
+        self.assertEqual(row2[6], "https://facebook.com/testcafe")
+        self.assertEqual(row2[7], "https://instagram.com/testcafe")
+        self.assertEqual(row2[8], 4.5)
+        self.assertEqual(row2[9], 120)
+        self.assertEqual(row2[10], "https://google.com/maps/place/1")
+
+        # Check second data row values with default N/A fields
+        row3 = [cell.value for cell in ws[3]]
+        self.assertEqual(row3[0], "Dental Clinic")
+        self.assertEqual(row3[4], "N/A")
+        self.assertEqual(row3[5], "N/A")
+        self.assertEqual(row3[6], "N/A")
+        self.assertEqual(row3[7], "N/A")

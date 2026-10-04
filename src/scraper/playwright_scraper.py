@@ -13,6 +13,7 @@ from src.scraper.exceptions import (
     SearchError
 )
 import src.scraper.selectors as selectors
+from src.enrichment.website_enricher import WebsiteEnricher
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +211,15 @@ class PlaywrightScraper(ScraperInterface):
     Refactored Google Maps scraper implementing ScraperInterface.
     Delegates browser lifecycle to BrowserSession and parses content via MapsParser.
     """
-    def __init__(self, headless: bool = True, config: Optional[ScraperConfig] = None) -> None:
+    def __init__(
+        self,
+        headless: bool = True,
+        config: Optional[ScraperConfig] = None,
+        enricher: Optional[WebsiteEnricher] = None
+    ) -> None:
         self.headless = headless
         self.config = config if config is not None else ScraperConfig(headless=headless)
+        self.enricher = enricher if enricher is not None else WebsiteEnricher()
 
     def scrape(
         self,
@@ -240,6 +247,11 @@ class PlaywrightScraper(ScraperInterface):
                 logger.info("Search query matched single location directly.")
                 item = MapsParser.extract_details(page, page.url)
                 if item:
+                    if self.enricher:
+                        try:
+                            item = self.enricher.enrich(item, context=page.context)
+                        except Exception as e:
+                            logger.warning(f"Error enriching item '{item.name}': {e}")
                     progress_callback(item)
                     return [item]
                 return []
@@ -457,6 +469,11 @@ class PlaywrightScraper(ScraperInterface):
                         logger.info(f"Skipping duplicate business listing: {item.name} ({normalized_url})")
                         continue
                     seen_business_urls.add(normalized_url)
+                    if self.enricher:
+                        try:
+                            item = self.enricher.enrich(item, context=page.context)
+                        except Exception as e:
+                            logger.warning(f"Error enriching item '{item.name}': {e}")
                     progress_callback(item)
                     results.append(item)
                     

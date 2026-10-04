@@ -41,6 +41,7 @@ class ExcelExporter(ExporterInterface):
             # Setup columns and headers
             headers = [
                 "Business Name", "Address", "Phone", "Website", 
+                "Email", "LinkedIn", "Facebook", "Instagram",
                 "Rating", "Reviews", "Google Maps URL"
             ]
             
@@ -73,19 +74,25 @@ class ExcelExporter(ExporterInterface):
                     item.address,
                     item.phone,
                     item.website,
+                    item.email,
+                    item.linkedin,
+                    item.facebook,
+                    item.instagram,
                     item.rating,
                     item.reviews_count,
                     item.maps_url
                 ])
             
             # Style data cells and auto-fit columns
+            rating_col = headers.index("Rating") + 1
+            reviews_col = headers.index("Reviews") + 1
             for row in range(2, len(items) + 2):
                 for col in range(1, len(headers) + 1):
                     cell = ws.cell(row=row, column=col)
                     cell.font = Font(name="Calibri", size=11)
                     cell.border = thin_border
-                    # Align numeric fields (Rating: col 5, Reviews: col 6) to the right
-                    if col in (5, 6):
+                    # Align numeric fields (Rating, Reviews) to the right
+                    if col in (rating_col, reviews_col):
                         cell.alignment = Alignment(horizontal="right")
                     else:
                         cell.alignment = Alignment(horizontal="left")

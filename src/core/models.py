@@ -11,3 +11,8 @@ class BusinessItem:
     phone: str
     website: str
     maps_url: str
+    email: str = "N/A"
+    linkedin: str = "N/A"
+    facebook: str = "N/A"
+    instagram: str = "N/A"
+

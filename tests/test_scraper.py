@@ -167,3 +167,51 @@ class TestPlaywrightScraper(unittest.TestCase):
         self.assertEqual(unique_links[0], "https://www.google.com/maps/place/Dentist1/@12.3,45.6,15z/data=1")
         self.assertEqual(unique_links[1], "https://www.google.com/maps/place/Dentist2/@12.3,45.6,15z/data=2")
 
+    @patch("src.scraper.playwright_scraper.MapsParser.extract_details")
+    def test_extract_listings_calls_enricher(self, mock_extract_details):
+        mock_enricher = MagicMock()
+        scraper = PlaywrightScraper(enricher=mock_enricher)
+        
+        mock_page = MagicMock()
+        mock_card = MagicMock()
+        mock_page.locator.return_value.first = mock_card
+        
+        base_item = BusinessItem(
+            name="Enriched Clinic",
+            rating=5.0,
+            reviews_count=100,
+            category="Clinic",
+            address="789 Elm St",
+            phone="555-4321",
+            website="https://enrichedclinic.com",
+            maps_url="https://maps.google.com/enriched"
+        )
+        mock_extract_details.return_value = base_item
+        
+        enriched_item = BusinessItem(
+            name="Enriched Clinic",
+            rating=5.0,
+            reviews_count=100,
+            category="Clinic",
+            address="789 Elm St",
+            phone="555-4321",
+            website="https://enrichedclinic.com",
+            maps_url="https://maps.google.com/enriched",
+            email="info@enrichedclinic.com",
+            linkedin="https://linkedin.com/company/enrichedclinic"
+        )
+        mock_enricher.enrich.return_value = enriched_item
+        
+        callback_items = []
+        results = scraper._extract_listings(
+            page=mock_page,
+            links=["https://maps.google.com/enriched"],
+            limit=1,
+            progress_callback=callback_items.append
+        )
+        
+        # Verify enricher was called with the extracted item and page context
+        mock_enricher.enrich.assert_called_once_with(base_item, context=mock_page.context)
+        self.assertEqual(results, [enriched_item])
+        self.assertEqual(callback_items, [enriched_item])
+

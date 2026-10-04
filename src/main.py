@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 from src.ui.main_window import MainWindow
 from src.ui.controller import MainWindowController
 from src.scraper.playwright_scraper import PlaywrightScraper
+from src.enrichment.website_enricher import WebsiteEnricher
 from src.exporter.excel_exporter import ExcelExporter
 
 def main():
@@ -19,7 +20,8 @@ def main():
     print("GeoScrape UI initialization...")
     
     # Create concrete engine instances (dependencies)
-    scraper = PlaywrightScraper(headless=True)
+    enricher = WebsiteEnricher()
+    scraper = PlaywrightScraper(headless=True, enricher=enricher)
     exporter = ExcelExporter()
     
     # Instantiate the View
