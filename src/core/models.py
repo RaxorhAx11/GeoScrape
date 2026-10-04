@@ -1,5 +1,17 @@
+from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
+
+
+class AutomationState(str, Enum):
+    """Execution states for the RPA automation lifecycle."""
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    PAUSED_FOR_HUMAN = "PAUSED_FOR_HUMAN"
+    CANCELLING = "CANCELLING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
 
 @dataclass(frozen=True)
 class BusinessItem:

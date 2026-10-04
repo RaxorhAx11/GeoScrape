@@ -14,6 +14,7 @@ from src.scraper.exceptions import (
 )
 import src.scraper.selectors as selectors
 from src.enrichment.website_enricher import WebsiteEnricher
+from src.scraper.challenge_detector import ChallengeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -215,11 +216,37 @@ class PlaywrightScraper(ScraperInterface):
         self,
         headless: bool = True,
         config: Optional[ScraperConfig] = None,
-        enricher: Optional[WebsiteEnricher] = None
+        enricher: Optional[WebsiteEnricher] = None,
+        challenge_detector: Optional[ChallengeDetector] = None
     ) -> None:
         self.headless = headless
         self.config = config if config is not None else ScraperConfig(headless=headless)
         self.enricher = enricher if enricher is not None else WebsiteEnricher()
+        self.challenge_detector = challenge_detector if challenge_detector is not None else ChallengeDetector()
+        self.on_challenge: Optional[Callable[[Page, str], bool]] = None
+
+    def _check_and_handle_challenge(self, page: Page) -> None:
+        """
+        Conservatively checks if an unusual challenge/verification screen is active.
+        If detected, triggers the Human-in-the-Loop exception resolution workflow.
+        """
+        if not self.challenge_detector:
+            return
+
+        detected, reason = self.challenge_detector.detect_challenge(page)
+        if not detected:
+            return
+
+        logger.warning("Potential verification challenge detected.")
+        if reason:
+            logger.info(f"Challenge details: {reason}")
+
+        if self.on_challenge:
+            resolved = self.on_challenge(page, reason or "Verification challenge detected")
+            if not resolved:
+                raise InterruptedError("Scraping halted during human challenge resolution.")
+        else:
+            raise SearchError(f"Verification challenge encountered without human intervention handler: {reason}")
 
     def scrape(
         self,
@@ -236,9 +263,11 @@ class PlaywrightScraper(ScraperInterface):
         with BrowserSession(self.config) as page:
             # Step 1: Navigate to Maps & Accept consent
             self._navigate_to_maps(page)
+            self._check_and_handle_challenge(page)
             
             # Step 2: Fill and Submit Search Form
             self._search_for_query(page, query, location)
+            self._check_and_handle_challenge(page)
             
             # Step 3: Wait for Results Feed OR Single Place View
             is_single_place = self._wait_for_results(page)
@@ -324,6 +353,7 @@ class PlaywrightScraper(ScraperInterface):
         try:
             page.wait_for_selector(combined_selector, state="visible", timeout=20000)
         except PlaywrightTimeoutError as e:
+            self._check_and_handle_challenge(page)
             if page.locator("text=Google Maps can't find").is_visible() or page.locator("text=No results found").is_visible():
                 logger.warning("Google Maps search returned zero results.")
                 return False
@@ -354,6 +384,8 @@ class PlaywrightScraper(ScraperInterface):
             # Check for active cancellation request
             if getattr(self, "is_cancelled", lambda: False)():
                 raise InterruptedError("Scraping halted by user.")
+
+            self._check_and_handle_challenge(page)
                 
             # Collect unique business links dynamically to check against configurable limit
             unique_links = self._collect_business_links(page)
@@ -444,6 +476,8 @@ class PlaywrightScraper(ScraperInterface):
             # Check for active cancellation request
             if getattr(self, "is_cancelled", lambda: False)():
                 raise InterruptedError("Scraping halted by user.")
+
+            self._check_and_handle_challenge(page)
                 
             # Polite Scraping: Add a random delay between details navigations (NFR-5.2)
             # Avoid delaying the very first listing navigation to keep startup snappy

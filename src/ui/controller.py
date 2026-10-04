@@ -11,6 +11,9 @@ from src.core.batch_queue import BatchQueue, load_batch_jobs_from_file, parse_si
 from src.core.models import BusinessItem, BatchJob, BatchJobResult
 from src.ui.main_window import MainWindow
 from src.scraper.playwright_scraper import ScraperConfig
+from src.scraper.challenge_detector import ChallengeDetector
+from src.ui.components.challenge_dialog import ChallengeDialog
+
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ class MainWindowController(QObject):
         self.batch_file_path = None
         self.pending_export_path = None
         self.current_review_items = []
+        self.challenge_dialog = None
 
         # Bind Single Scrape View buttons to Controller slots
         self.view.control_panel.start_button.clicked.connect(self.start_scraping)
@@ -142,6 +146,12 @@ class MainWindowController(QObject):
         self.scraper.headless = config["headless"]
         self.scraper.config = ScraperConfig(headless=config["headless"])
 
+        # Configure ChallengeDetector (supporting faculty demo simulation mode if checked)
+        simulate_challenge = config.get("simulate_challenge", False)
+        if "[test-challenge]" in config["query"].lower() or "[simulate-challenge]" in config["query"].lower():
+            simulate_challenge = True
+        self.scraper.challenge_detector = ChallengeDetector(simulate_challenge=simulate_challenge)
+
         # 5. Spin up background QThread Orchestration worker with auto_export=False (HITL Review)
         self.orchestrator = ScrapeOrchestrator(
             scraper=self.scraper,
@@ -160,6 +170,9 @@ class MainWindowController(QObject):
         self.orchestrator.data_ready.connect(self.on_scrape_data_ready)
         self.orchestrator.scraping_finished.connect(self.on_scraping_finished)
         self.orchestrator.failed.connect(self.on_scraping_failed)
+        self.orchestrator.challenge_detected.connect(self.on_challenge_detected)
+        self.orchestrator.challenge_still_present.connect(self.on_challenge_still_present)
+        self.orchestrator.challenge_resolved.connect(self.on_challenge_resolved)
         
         # Safely clean up the thread object from memory only after execution loop fully stops
         self.orchestrator.finished.connect(self.orchestrator.deleteLater)
@@ -318,8 +331,111 @@ class MainWindowController(QObject):
         )
         self.reset_ui_state()
 
+    # =========================================================================
+    # HUMAN BOT-CHALLENGE RESOLUTION SLOTS (HITL Workflow #5)
+    # =========================================================================
+
+    def on_challenge_detected(self, reason: str) -> None:
+        """
+        Slot invoked when scraper detects an unusual bot challenge / verification interstitial.
+        Pauses automation and presents modal dialog for human manual intervention.
+        """
+        logger.warning(f"Verification challenge detected: {reason}")
+        self.view.log_console.log(
+            "⚠️ Verification challenge detected! Automation paused for human intervention.",
+            "WARNING"
+        )
+        self.view.log_console.log("Please complete verification in the browser window, then click Resume.", "WARNING")
+        self.view.set_status("paused", "Human verification required.")
+
+        if self.challenge_dialog:
+            try:
+                self.challenge_dialog.close()
+            except Exception:
+                pass
+
+        timeout_sec = getattr(self.orchestrator, "challenge_timeout_seconds", 300)
+        self.challenge_dialog = ChallengeDialog(
+            parent=self.view,
+            reason=reason,
+            timeout_seconds=timeout_sec
+        )
+        self.challenge_dialog.resume_clicked.connect(self.on_challenge_resume_clicked)
+        self.challenge_dialog.cancel_clicked.connect(self.on_challenge_cancel_clicked)
+        self.challenge_dialog.show()
+
+    def on_batch_challenge_detected(self, current: int, total: int, reason: str) -> None:
+        """Slot invoked when bot challenge is detected during a batch queue job."""
+        logger.warning(f"Batch Job {current}/{total} challenge detected: {reason}")
+        self.view.log_console.log(
+            f"⚠️ Batch Job {current}/{total}: Verification challenge detected! Paused for human intervention.",
+            "WARNING"
+        )
+        self.view.log_console.log("Please complete verification in the browser window, then click Resume.", "WARNING")
+        self.view.set_status("paused", f"Job {current}/{total}: Human verification required.")
+
+        if self.challenge_dialog:
+            try:
+                self.challenge_dialog.close()
+            except Exception:
+                pass
+
+        timeout_sec = getattr(self.batch_orchestrator, "challenge_timeout_seconds", 300)
+        self.challenge_dialog = ChallengeDialog(
+            parent=self.view,
+            reason=f"[Job {current}/{total}] {reason}",
+            timeout_seconds=timeout_sec
+        )
+        self.challenge_dialog.resume_clicked.connect(self.on_challenge_resume_clicked)
+        self.challenge_dialog.cancel_clicked.connect(self.on_challenge_cancel_clicked)
+        self.challenge_dialog.show()
+
+    def on_challenge_still_present(self, message: str) -> None:
+        """Slot invoked if user clicks Resume but the challenge remains active on the page."""
+        logger.warning("Verification challenge still present after Resume attempt.")
+        self.view.log_console.log(f"Re-check notice: {message}", "WARNING")
+        if self.challenge_dialog:
+            self.challenge_dialog.show_still_present_warning(message)
+
+    def on_challenge_resolved(self) -> None:
+        """Slot invoked when challenge is confirmed solved and automation resumes."""
+        logger.info("Human intervention completed.")
+        logger.info("Resuming automated scraping.")
+        self.view.log_console.log("Verification no longer detected.", "SUCCESS")
+        self.view.log_console.log("Human intervention completed. Resuming automated scraping...", "SUCCESS")
+        self.view.set_status("running", "Resuming automated scraping...")
+        if self.challenge_dialog:
+            self.challenge_dialog.accept()
+            self.challenge_dialog = None
+
+    def on_challenge_resume_clicked(self) -> None:
+        """Slot invoked when human clicks 'Resume Scraping' in ChallengeDialog."""
+        logger.info("Human selected Resume.")
+        self.view.log_console.log("Human selected Resume. Re-checking browser challenge state...", "INFO")
+        if self.orchestrator:
+            self.orchestrator.resume()
+        elif self.batch_orchestrator:
+            self.batch_orchestrator.resume()
+
+    def on_challenge_cancel_clicked(self) -> None:
+        """Slot invoked when human clicks 'Cancel Scraping' in ChallengeDialog."""
+        logger.warning("Human intervention cancelled.")
+        self.view.log_console.log("Human intervention cancelled by user.", "WARNING")
+        if self.orchestrator:
+            self.orchestrator.cancel()
+        elif self.batch_orchestrator:
+            self.batch_orchestrator.cancel()
+        if self.challenge_dialog:
+            self.challenge_dialog = None
+
     def reset_ui_state(self) -> None:
         """Restores dashboard inputs and control states to default editable view."""
+        if self.challenge_dialog:
+            try:
+                self.challenge_dialog.close()
+            except Exception:
+                pass
+            self.challenge_dialog = None
         self.view.tab_widget.tabBar().setEnabled(True)
         self.view.config_form.set_inputs_enabled(True)
         self.view.control_panel.set_running(False)
@@ -419,6 +535,9 @@ class MainWindowController(QObject):
         self.scraper.headless = is_headless
         self.scraper.config = ScraperConfig(headless=is_headless)
 
+        simulate_challenge = self.view.batch_panel.get_simulate_challenge()
+        self.scraper.challenge_detector = ChallengeDetector(simulate_challenge=simulate_challenge)
+
         # Instantiate background BatchScrapeOrchestrator worker
         self.batch_orchestrator = BatchScrapeOrchestrator(
             queue=self.batch_queue,
@@ -437,6 +556,9 @@ class MainWindowController(QObject):
         self.batch_orchestrator.batch_finished.connect(self.on_batch_finished)
         self.batch_orchestrator.batch_cancelled.connect(self.on_batch_cancelled)
         self.batch_orchestrator.batch_failed.connect(self.on_batch_failed)
+        self.batch_orchestrator.challenge_detected.connect(self.on_batch_challenge_detected)
+        self.batch_orchestrator.challenge_still_present.connect(self.on_challenge_still_present)
+        self.batch_orchestrator.challenge_resolved.connect(self.on_challenge_resolved)
         
         self.batch_orchestrator.finished.connect(self.batch_orchestrator.deleteLater)
 
@@ -542,6 +664,12 @@ class MainWindowController(QObject):
 
     def reset_batch_ui_state(self) -> None:
         """Restores batch panel controls and tab bar to idle state."""
+        if self.challenge_dialog:
+            try:
+                self.challenge_dialog.close()
+            except Exception:
+                pass
+            self.challenge_dialog = None
         self.view.tab_widget.tabBar().setEnabled(True)
         self.view.batch_panel.set_running(False)
         self.batch_orchestrator = None
@@ -557,6 +685,13 @@ class MainWindowController(QObject):
 
     def handle_close(self, event) -> None:
         """Coordinates proper thread shutdown on window close event."""
+        if self.challenge_dialog:
+            try:
+                self.challenge_dialog.close()
+            except Exception:
+                pass
+            self.challenge_dialog = None
+
         active_worker = None
         if self.orchestrator and self.orchestrator.isRunning():
             active_worker = self.orchestrator

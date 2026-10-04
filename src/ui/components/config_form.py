@@ -51,25 +51,37 @@ class ConfigForm(QWidget):
         self.headed_checkbox = QCheckBox("Show browser window")
         self.headed_checkbox.setObjectName("headedCheckbox")
         self.headed_checkbox.setChecked(False)  # Default to false (run headless)
+
+        # Faculty Demonstration / Testing Trigger Checkbox (Step 14)
+        self.simulate_challenge_checkbox = QCheckBox("Simulate challenge (Demo/Test)")
+        self.simulate_challenge_checkbox.setObjectName("simulateChallengeCheckbox")
+        self.simulate_challenge_checkbox.setChecked(False)
+        self.simulate_challenge_checkbox.setToolTip(
+            "Development/Testing Mode: Simulates a verification challenge exception to demonstrate "
+            "Human-in-the-Loop Workflow #5 without depending on live CAPTCHAs."
+        )
         
         # Add widget rows
         form_layout.addRow(self.keyword_label, self.keyword_input)
         form_layout.addRow(self.location_label, self.location_input)
         form_layout.addRow(self.max_results_label, self.max_results_spin)
         form_layout.addRow("", self.headed_checkbox)
+        form_layout.addRow("", self.simulate_challenge_checkbox)
 
     def get_data(self) -> dict:
         """
         Retrieves user input parameters formatted as a dictionary.
         
         Returns:
-            dict: Containing 'query' (str), 'location' (str), 'limit' (int), and 'headless' (bool).
+            dict: Containing 'query' (str), 'location' (str), 'limit' (int), 'headless' (bool),
+                  and 'simulate_challenge' (bool).
         """
         return {
             "query": self.keyword_input.text().strip(),
             "location": self.location_input.text().strip(),
             "limit": self.max_results_spin.value(),
-            "headless": not self.headed_checkbox.isChecked()
+            "headless": not self.headed_checkbox.isChecked(),
+            "simulate_challenge": self.simulate_challenge_checkbox.isChecked()
         }
 
     def validate(self) -> bool:
@@ -104,6 +116,8 @@ class ConfigForm(QWidget):
         self.location_input.setEnabled(enabled)
         self.max_results_spin.setEnabled(enabled)
         self.headed_checkbox.setEnabled(enabled)
+        self.simulate_challenge_checkbox.setEnabled(enabled)
+
 
     def _set_error_state(self, widget: QLineEdit, has_error: bool) -> None:
         """Applies dynamic stylesheet properties and forces redrawing."""

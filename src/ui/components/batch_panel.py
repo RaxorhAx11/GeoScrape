@@ -107,6 +107,16 @@ class BatchPanel(QWidget):
         self.headed_checkbox.setChecked(False)
         layout.addWidget(self.headed_checkbox)
 
+        # Faculty Demonstration / Testing Trigger Checkbox (Step 14)
+        self.simulate_challenge_checkbox = QCheckBox("Simulate challenge (Demo/Test)")
+        self.simulate_challenge_checkbox.setObjectName("batchSimulateChallengeCheckbox")
+        self.simulate_challenge_checkbox.setChecked(False)
+        self.simulate_challenge_checkbox.setToolTip(
+            "Development/Testing Mode: Simulates a verification challenge exception in batch mode."
+        )
+        layout.addWidget(self.simulate_challenge_checkbox)
+
+
         # Action Buttons (Run / Cancel)
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
@@ -173,6 +183,10 @@ class BatchPanel(QWidget):
         """Returns text content from the Simple Input text area."""
         return self.simple_text_edit.toPlainText().strip()
 
+    def get_simulate_challenge(self) -> bool:
+        """Returns whether simulated bot challenge test trigger is enabled."""
+        return self.simulate_challenge_checkbox.isChecked()
+
     def set_batch_loaded(self, file_name: str, file_path: str, count: int) -> None:
         """Updates UI state when a batch JSON file is parsed."""
         self._json_jobs_count = count
@@ -192,6 +206,8 @@ class BatchPanel(QWidget):
         self.run_button.setEnabled(not is_running)
         self.cancel_button.setEnabled(is_running)
         self.headed_checkbox.setEnabled(not is_running)
+        self.simulate_challenge_checkbox.setEnabled(not is_running)
+
 
     def update_job_status(self, current: int, total: int, keyword: str, location: str) -> None:
         """Updates display for active job in the batch."""

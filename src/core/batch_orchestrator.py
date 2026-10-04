@@ -3,10 +3,11 @@ import logging
 from typing import List, Optional
 from PySide6.QtCore import QThread, Signal
 
-from src.core.models import BusinessItem, BatchJob, BatchJobResult
+from src.core.models import BusinessItem, BatchJob, BatchJobResult, AutomationState
 from src.core.batch_queue import BatchQueue, generate_batch_output_path
 from src.core.interfaces.scraper import ScraperInterface
 from src.core.interfaces.exporter import ExporterInterface
+from src.core.challenge_coordinator import HumanChallengeCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class BatchScrapeOrchestrator(QThread):
     QThread worker that orchestrates sequential batch processing of multiple search jobs.
     Runs in the background without freezing the GUI thread.
     Communicates progress and lifecycle events via Qt signals.
+    Supports Human-in-the-Loop Bot Challenge Resolution (HITL Workflow #5).
     """
     # Signals
     batch_started = Signal(int)                          # total_jobs
@@ -27,6 +29,10 @@ class BatchScrapeOrchestrator(QThread):
     batch_finished = Signal(str, list)                   # summary_report_text, list of BatchJobResult
     batch_cancelled = Signal()                           # Triggered when user cancels
     batch_failed = Signal(str)                           # Fatal error preventing batch run
+    challenge_detected = Signal(int, int, str)           # current_job_num, total_jobs, reason
+    challenge_still_present = Signal(str)                # warning message
+    challenge_resolved = Signal()                        # challenge cleared
+    state_changed = Signal(str)                          # AutomationState
 
     def __init__(
         self,
@@ -35,6 +41,7 @@ class BatchScrapeOrchestrator(QThread):
         exporter: ExporterInterface,
         output_dir: str,
         auto_export: bool = True,
+        challenge_timeout_seconds: int = 300,
         parent=None
     ) -> None:
         super().__init__(parent)
@@ -43,16 +50,30 @@ class BatchScrapeOrchestrator(QThread):
         self.exporter = exporter
         self.output_dir = output_dir
         self.auto_export = auto_export
+        self.challenge_timeout_seconds = challenge_timeout_seconds
         self._is_cancelled = False
+        self._state = AutomationState.IDLE
+        self.coordinator: Optional[HumanChallengeCoordinator] = None
+
+    @property
+    def state(self) -> AutomationState:
+        return self._state
+
+    @state.setter
+    def state(self, new_state: AutomationState) -> None:
+        self._state = new_state
+        self.state_changed.emit(new_state.value)
 
     def run(self) -> None:
         """Executes the batch processing loop sequentially."""
         if self.queue.is_empty():
+            self.state = AutomationState.FAILED
             self.batch_failed.emit("Batch queue is empty. No jobs to process.")
             return
 
         total_jobs = self.queue.total_jobs
         logger.info(f"Starting batch queue execution ({total_jobs} jobs total)...")
+        self.state = AutomationState.RUNNING
         self.batch_started.emit(total_jobs)
 
         while not self.queue.is_finished():
@@ -82,9 +103,31 @@ class BatchScrapeOrchestrator(QThread):
                 self.job_item_scraped.emit(current_job_num, total_jobs, item)
                 self.job_progress.emit(current_job_num, total_jobs, len(scraped_items), job.max_results)
 
+            def on_challenge_detected(reason: str) -> None:
+                self.state = AutomationState.PAUSED_FOR_HUMAN
+                self.challenge_detected.emit(current_job_num, total_jobs, reason)
+
+            def on_challenge_still_present(msg: str) -> None:
+                self.challenge_still_present.emit(msg)
+
+            def on_challenge_resolved() -> None:
+                self.state = AutomationState.RUNNING
+                self.challenge_resolved.emit()
+
             try:
                 # Dynamic cancellation check for scraper
                 self.scraper.is_cancelled = lambda: self._is_cancelled
+
+                # Setup challenge coordinator for this batch job
+                self.coordinator = HumanChallengeCoordinator(
+                    scraper=self.scraper,
+                    timeout_seconds=self.challenge_timeout_seconds,
+                    on_detected=on_challenge_detected,
+                    on_still_present=on_challenge_still_present,
+                    on_resolved=on_challenge_resolved,
+                    is_cancelled_func=lambda: self._is_cancelled
+                )
+                self.scraper.on_challenge = self.coordinator.handle_challenge
 
                 # 1. Scrape with automated website enrichment (reused from scraper)
                 self.scraper.scrape(
@@ -152,8 +195,10 @@ class BatchScrapeOrchestrator(QThread):
 
         # Batch finalization
         if self._is_cancelled:
+            self.state = AutomationState.CANCELLING
             self.batch_cancelled.emit()
         else:
+            self.state = AutomationState.COMPLETED
             summary = self.queue.generate_summary()
             logger.info(f"Batch completed: {self.queue.completed_count} successful, {self.queue.failed_count} failed.")
             
@@ -167,7 +212,15 @@ class BatchScrapeOrchestrator(QThread):
                 
             self.batch_finished.emit(summary, self.queue.results)
 
+    def resume(self) -> None:
+        """Signals paused worker thread to resume scraping after human intervention."""
+        if self.coordinator:
+            self.coordinator.resume()
+
     def cancel(self) -> None:
         """Sets flag to gracefully cancel batch processing."""
         self._is_cancelled = True
+        self.state = AutomationState.CANCELLING
+        if self.coordinator:
+            self.coordinator.cancel()
         self.queue.cancel()
